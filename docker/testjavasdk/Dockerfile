@@ -8,6 +8,7 @@ apt-get clean
 ENV TOMCAT_MAJOR 7
 ENV TOMCAT_VERSION 7.0.70
 ENV TOMCAT_TGZ_URL https://www.apache.org/dist/tomcat/tomcat-$TOMCAT_MAJOR/v$TOMCAT_VERSION/bin/apache-tomcat-$TOMCAT_VERSION.tar.gz
+EXPOSE 8080
 
 RUN mkdir /tomcat && curl -SL $TOMCAT_TGZ_URL | tar -xzC /tomcat
 RUN git clone --branch features/dockerenv git://github.com/Microsoft/ApplicationInsights-Java
