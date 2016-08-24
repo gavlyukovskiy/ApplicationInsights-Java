@@ -14,5 +14,4 @@ RUN mkdir /tomcat && curl -SL $TOMCAT_TGZ_URL | tar -xzC /tomcat
 RUN git clone --branch features/dockerenv git://github.com/Microsoft/ApplicationInsights-Java
 WORKDIR ApplicationInsights-Java
 RUN chmod +x gradlew && ./gradlew assemble war prepare
-RUN chmod +x /ApplicationInsights-Java/docker/startup/default.sh
-ENTRYPOINT ["/ApplicationInsights-Java/docker/startup/default.sh"]
+CMD "/bin/bash"
