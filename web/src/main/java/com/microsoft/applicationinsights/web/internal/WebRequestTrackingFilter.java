@@ -136,6 +136,9 @@ public final class WebRequestTrackingFilter implements Filter {
                         }
                     });
                 }
+                else {
+                    invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+                }
             }
             else {
                 invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
