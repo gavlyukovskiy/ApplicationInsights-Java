@@ -80,11 +80,13 @@ public final class WebRequestTrackingFilter implements Filter {
         setKeyOnTLS(key);
 
         final boolean isRequestProcessedSuccessfully = invokeSafeOnBeginRequest(req, response);
+        boolean isAsync = false;
 
         try {
             chain.doFilter(req, response);
             if (ServletRuntime.isServlet3xRuntime()) {
                 if (req.isAsyncStarted()) {
+                    isAsync = true;
                     // cannot be moved to inner class due to class initialization issues when running in Servlet 2.5 environment
                     req.getAsyncContext().addListener(new AsyncListener() {
                         private AtomicBoolean complete = new AtomicBoolean(false);
@@ -94,8 +96,9 @@ public final class WebRequestTrackingFilter implements Filter {
                             if (complete.get()) {
                                 return;
                             }
-                            invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
                             complete.set(true);
+                            invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+                            cleanup();
                         }
 
                         @Override
@@ -103,9 +106,10 @@ public final class WebRequestTrackingFilter implements Filter {
                             if (complete.get()) {
                                 return;
                             }
+                            complete.set(true);
                             // it is error, but e.getThrowable() is null in this case
                             invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
-                            complete.set(true);
+                            cleanup();
                         }
 
                         @Override
@@ -113,6 +117,7 @@ public final class WebRequestTrackingFilter implements Filter {
                             if (complete.get()) {
                                 return;
                             }
+                            complete.set(true);
                             Throwable throwable = e.getThrowable();
                             // TODO: how throwables are reported?
                             if (throwable instanceof Exception) {
@@ -121,7 +126,7 @@ public final class WebRequestTrackingFilter implements Filter {
                             else {
                                 invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
                             }
-                            complete.set(true);
+                            cleanup();
                         }
 
                         /** If another async is created (ex via asyncContext.dispatch), this needs to be re-attached */
@@ -145,7 +150,9 @@ public final class WebRequestTrackingFilter implements Filter {
             onException(re, req, response, isRequestProcessedSuccessfully);
             throw re;
         } finally {
-            cleanup();
+            if (!isAsync) {
+                cleanup();
+            }
         }
     }
 
