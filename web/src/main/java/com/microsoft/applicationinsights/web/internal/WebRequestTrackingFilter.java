@@ -26,7 +26,10 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Date;
 import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.servlet.AsyncEvent;
+import javax.servlet.AsyncListener;
 import javax.servlet.Filter;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -72,15 +75,66 @@ public final class WebRequestTrackingFilter implements Filter {
      * @throws IOException Exception that can be thrown from invoking the filters chain.
      * @throws ServletException Exception that can be thrown from invoking the filters chain.
      */
-    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) throws IOException, ServletException {
-        ApplicationInsightsHttpResponseWrapper response = new ApplicationInsightsHttpResponseWrapper((HttpServletResponse)res);
+    public void doFilter(final ServletRequest req, final ServletResponse res, FilterChain chain) throws IOException, ServletException {
+        final ApplicationInsightsHttpResponseWrapper response = new ApplicationInsightsHttpResponseWrapper((HttpServletResponse)res);
         setKeyOnTLS(key);
 
-        boolean isRequestProcessedSuccessfully = invokeSafeOnBeginRequest(req, response);
+        final boolean isRequestProcessedSuccessfully = invokeSafeOnBeginRequest(req, response);
 
         try {
             chain.doFilter(req, response);
-            invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+            if (ServletRuntime.isServlet3xRuntime()) {
+                if (req.isAsyncStarted()) {
+                    // cannot be moved to inner class due to class initialization issues when running in Servlet 2.5 environment
+                    req.getAsyncContext().addListener(new AsyncListener() {
+                        private AtomicBoolean complete = new AtomicBoolean(false);
+
+                        @Override
+                        public void onComplete(AsyncEvent e) {
+                            if (complete.get()) {
+                                return;
+                            }
+                            invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+                            complete.set(true);
+                        }
+
+                        @Override
+                        public void onTimeout(AsyncEvent e) {
+                            if (complete.get()) {
+                                return;
+                            }
+                            // it is error, but e.getThrowable() is null in this case
+                            invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+                            complete.set(true);
+                        }
+
+                        @Override
+                        public void onError(AsyncEvent e) {
+                            if (complete.get()) {
+                                return;
+                            }
+                            Throwable throwable = e.getThrowable();
+                            // TODO: how throwables are reported?
+                            if (throwable instanceof Exception) {
+                                onException(((Exception) throwable), req, response, isRequestProcessedSuccessfully);
+                            }
+                            else {
+                                invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+                            }
+                            complete.set(true);
+                        }
+
+                        /** If another async is created (ex via asyncContext.dispatch), this needs to be re-attached */
+                        @Override
+                        public void onStartAsync(AsyncEvent event) {
+                            event.getAsyncContext().addListener(this);
+                        }
+                    });
+                }
+            }
+            else {
+                invokeSafeOnEndRequest(req, response, isRequestProcessedSuccessfully);
+            }
         } catch (ServletException se) {
             onException(se, req, response,isRequestProcessedSuccessfully);
             throw se;
